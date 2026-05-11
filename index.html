@@ -1,0 +1,145 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>CRT Filter</title>
+<style>
+@import url('https://db.onlinewebfonts.com/c/f18149d69a4651070f2f51e1c6c2485c?family=Africa+Trial+Cliff');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100vw;height:100vh;height:100dvh}
+#msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font:1rem/1.6 system-ui,sans-serif;text-align:center;padding:2rem;pointer-events:none}
+#controls{position:fixed;bottom:0;left:0;right:0;display:none;flex-direction:column;gap:8px;background:rgba(0,0,0,.62);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid rgba(255,255,255,.12);padding:12px 16px;padding-bottom:max(14px,env(safe-area-inset-bottom));color:#fff;font:13px/1.2 system-ui,sans-serif;user-select:none}
+.ctrl-sliders{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.ctrl-sliders label{display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0}
+.ctrl-sliders label strong{min-width:28px;text-align:right;font-weight:600}
+.ctrl-sliders input[type=range]{flex:1;min-width:0;accent-color:#fff;cursor:pointer}
+.ctrl-btns{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ctrl-btns>button,#pauseBtn{padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;cursor:pointer;font:13px system-ui,sans-serif;white-space:nowrap;transition:background .15s}
+.ctrl-btns>button:hover,#pauseBtn:hover{background:rgba(255,255,255,.22)}
+.ctrl-btns>button.active{background:rgba(80,140,255,.35);border-color:rgba(100,160,255,.6)}
+#pauseBtn.paused{background:rgba(220,60,60,.35);border-color:rgba(220,80,80,.6)}
+.ctrl-system{display:flex;align-items:center;gap:8px}
+#cameraSelect{flex:1;min-width:0;background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:6px 28px 6px 12px;font:13px system-ui,sans-serif;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23fff'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cameraSelect option{background:#1a1a1a;color:#fff}
+#qrModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);align-items:center;justify-content:center;z-index:100}
+#qrModal.open{display:flex}
+#qrBox{background:#fff;border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:90vw}
+#qrImg{width:200px;height:200px;display:block}
+#qrUrl{font:11px/1.4 monospace;color:#333;word-break:break-all;text-align:center;max-width:200px}
+#qrClose{padding:7px 24px;border-radius:20px;border:none;background:#222;color:#fff;cursor:pointer;font-size:13px}
+@media(min-width:700px){#controls{bottom:20px;left:50%;right:auto;transform:translateX(-50%);border-top:none;border-radius:40px;border:1px solid rgba(255,255,255,.12);flex-direction:row;flex-wrap:wrap;align-items:center;gap:14px;padding:10px 20px;width:max-content;max-width:calc(100vw - 40px)}.ctrl-sliders{display:contents}.ctrl-sliders label{gap:6px}.ctrl-sliders input[type=range]{width:90px;flex:none}.ctrl-btns,.ctrl-system{gap:10px}#cameraSelect{flex:none;max-width:160px}}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="msg">Waiting for camera…</div>
+<div id="controls">
+  <div class="ctrl-sliders">
+    <label>Pixels: <strong id="pixelsVal">5</strong><input type="range" id="pixelsSlider" min="1" max="15" value="5" step="1"></label>
+    <label>Scanlines: <strong id="scanlinesVal">20</strong><input type="range" id="scanlinesSlider" min="0" max="50" value="20" step="1"></label>
+    <label>Curvature: <strong id="curvatureVal">8</strong><input type="range" id="curvatureSlider" min="0" max="50" value="8" step="1"></label>
+    <label>Vignette: <strong id="vignetteVal">15</strong><input type="range" id="vignetteSlider" min="0" max="50" value="15" step="1"></label>
+    <label>Glitch: <strong id="glitchVal">0</strong><input type="range" id="glitchSlider" min="0" max="50" value="0" step="1"></label>
+    <label>Saturation: <strong id="saturationVal">0</strong><input type="range" id="saturationSlider" min="-50" max="50" value="0" step="1"></label>
+  </div>
+  <div class="ctrl-btns">
+    <button id="flipBtn">Mirror</button>
+    <button id="photoBtn">📷 Photo</button>
+  </div>
+  <div class="ctrl-system">
+    <select id="cameraSelect" title="Select camera"></select>
+    <button id="qrBtn">QR</button>
+    <button id="pauseBtn">Pause</button>
+  </div>
+</div>
+<div id="qrModal"><div id="qrBox"><img id="qrImg" src="" alt="QR Code"><p id="qrUrl"></p><button id="qrClose">Close</button></div></div>
+<video id="video" autoplay muted playsinline style="display:none"></video>
+<script>
+'use strict';
+const canvas=document.getElementById('canvas'),msg=document.getElementById('msg'),controls=document.getElementById('controls'),video=document.getElementById('video');
+const pixelsSlider=document.getElementById('pixelsSlider'),pixelsVal=document.getElementById('pixelsVal');
+const scanlinesSlider=document.getElementById('scanlinesSlider'),scanlinesVal=document.getElementById('scanlinesVal');
+const curvatureSlider=document.getElementById('curvatureSlider'),curvatureVal=document.getElementById('curvatureVal');
+const vignetteSlider=document.getElementById('vignetteSlider'),vignetteVal=document.getElementById('vignetteVal');
+const glitchSlider=document.getElementById('glitchSlider'),glitchVal=document.getElementById('glitchVal');
+const saturationSlider=document.getElementById('saturationSlider'),saturationVal=document.getElementById('saturationVal');
+const flipBtn=document.getElementById('flipBtn'),photoBtn=document.getElementById('photoBtn'),pauseBtn=document.getElementById('pauseBtn');
+const qrBtn=document.getElementById('qrBtn'),qrModal=document.getElementById('qrModal'),qrImg=document.getElementById('qrImg'),qrUrl=document.getElementById('qrUrl'),qrClose=document.getElementById('qrClose');
+const cameraSelect=document.getElementById('cameraSelect');
+let pixels=5,scanlines=20,curvature=8,vignette=15,glitch=0,saturation=0;
+let flipped=false,paused=false,raf=null,currentlamId=null,activeStream=null;
+const gl=canvas.getContext('webgl2',{preserveDrawingBuffer:true});
+if(!gl){msg.textContent='WebGL2 not available.';throw new Error('no webgl2');}
+const VERT='#version 300 es\nin vec2 a_pos;\nvoid main(){gl_Position=vec4(a_pos,0.0,1.0);}';
+const FRAG="#version 300 es\nprecision highp float;\nuniform sampler2D u_video;\nuniform vec2 u_res;\nuniform float u_time;\nuniform bool u_flip;\nuniform float u_pixels,u_scanlines,u_curvature,u_vignette,u_glitch,u_saturation;\nout vec4 fragColor;\n\nfloat hash11(float p){p=fract(p*.1031);p*=p+33.33;p*=p+p;return fract(p);}\nfloat hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}\n\nvoid main(){\n  float subW=u_pixels;\n  float cellW=subW*3.0,cellH=subW*3.0;\n  vec2 cellIdx=floor(gl_FragCoord.xy/vec2(cellW,cellH));\n  vec2 lp=fract(gl_FragCoord.xy/vec2(cellW,cellH));\n\n  vec2 sUV=(cellIdx+0.5)*vec2(cellW,cellH)/u_res;\n  sUV.y=1.0-sUV.y;\n  if(u_flip)sUV.x=1.0-sUV.x;\n\n  if(u_curvature>0.0){\n    vec2 c=sUV*2.0-1.0;\n    c*=1.0+u_curvature*0.22*dot(c,c);\n    sUV=c*0.5+0.5;\n  }\n  if(sUV.x<0.0||sUV.x>1.0||sUV.y<0.0||sUV.y>1.0){fragColor=vec4(0,0,0,1);return;}\n\n  float gx=sUV.x;\n  if(u_glitch>0.0){\n    float t=floor(u_time*15.0),ly=cellIdx.y;\n    if(hash11(ly*0.013+t*3.7)>1.0-u_glitch*0.45) gx+=(hash11(ly+t*7.3)-0.5)*u_glitch*0.11;\n    float by=floor(sUV.y*22.0);\n    if(hash11(by*2.1+floor(u_time*4.0))>1.0-u_glitch*0.28) gx+=(hash11(by*0.5+t)-0.5)*u_glitch*0.22;\n    gx=clamp(gx,0.0,1.0);\n  }\n\n  vec3 col=texture(u_video,vec2(gx,sUV.y)).rgb;\n  float lum=dot(col,vec3(0.2126,0.7152,0.0722));\n  col=mix(vec3(lum),col,1.0+u_saturation*1.6);\n  col=clamp(col,0.0,1.0);\n\n  float subX=lp.x*3.0;\n  int subIdx=int(floor(subX));\n  float subFrac=fract(subX);\n  float subMask=1.0-smoothstep(0.84,0.92,subFrac);\n  float scanFrac=0.07+u_scanlines*0.30;\n  float scanMask=1.0-smoothstep(1.0-scanFrac-0.02,1.0-scanFrac+0.02,lp.y);\n\n  vec3 ph=vec3(\n    float(subIdx==0)*col.r,\n    float(subIdx==1)*col.g,\n    float(subIdx==2)*col.b\n  )*subMask*scanMask;\n\n  ph/=max(0.86*(1.0-(0.07+u_scanlines*0.30)),0.22);\n\n  if(u_vignette>0.0){\n    vec2 vv=sUV*2.0-1.0;\n    ph*=clamp(1.0-dot(vv,vv)*u_vignette*0.72,0.0,1.0);\n  }\n\n  ph=clamp(ph+(hash12(cellIdx+fract(u_time*0.073)*937.0)-0.5)*0.045,0.0,1.0);\n  fragColor=vec4(ph,1.0);\n}";
+function mkShader(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+const prog=gl.createProgram();
+gl.attachShader(prog,mkShader(gl.VERTEX_SHADER,VERT));
+gl.attachShader(prog,mkShader(gl.FRAGMENT_SHADER,FRAG));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const vbuf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+const aPos=gl.getAttribLocation(prog,'a_pos');
+gl.enableVertexAttribArray(aPos);gl.vertexAttribPointer(aPos,2,gl.FLOAT,false,0,0);
+const vtex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,vtex);
+[gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(p=>gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE));
+[gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(p=>gl.texParameteri(gl.TEXTURE_2D,p,gl.LINEAR));
+const U={};['video','res','time','flip','pixels','scanlines','curvature','vignette','glitch','saturation'].forEach(n=>U[n]=gl.getUniformLocation(prog,'u_'+n));
+gl.uniform1i(U.video,0);
+function resizelanvas(){const dpr=window.devicePixelRatio||1,vv=window.visualViewport;canvas.width=Math.round((vv?vv.width:window.innerWidth)*dpr);canvas.height=Math.round((vv?vv.height:window.innerHeight)*dpr);gl.viewport(0,0,canvas.width,canvas.height);}
+window.addEventListener('resize',resizelanvas);
+if(window.visualViewport)window.visualViewport.addEventListener('resize',resizelanvas);
+resizelanvas();
+function drawerame(){
+  if(video.readyState<2)return;
+  gl.bindTexture(gl.TEXTURE_2D,vtex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
+  gl.uniform2f(U.res,canvas.width,canvas.height);
+  gl.uniform1f(U.time,performance.now()*.001);
+  gl.uniform1i(U.flip,flipped?1:0);
+  gl.uniform1f(U.pixels,pixels);
+  gl.uniform1f(U.scanlines,scanlines/50);
+  gl.uniform1f(U.curvature,curvature/50);
+  gl.uniform1f(U.vignette,vignette/50);
+  gl.uniform1f(U.glitch,glitch/50);
+  gl.uniform1f(U.saturation,saturation/50);
+  gl.drawArrays(gl.TRIANGLES,0,6);
+}
+function loop(){drawerame();raf=requestAnimationFrame(loop);}
+function startLoop(){if(raf)cancelAnimationFrame(raf);raf=requestAnimationFrame(loop);}
+function stopLoop(){if(raf){cancelAnimationFrame(raf);raf=null;}}
+function fillSelect(cams,activeId){const prev=cameraSelect.value;cameraSelect.innerHTML='';cams.forEach((c,i)=>{const o=document.createElement('option');o.value=c.deviceId;o.text=c.label||'Camera '+(i+1);cameraSelect.appendChild(o);});cameraSelect.value=activeId||prev||(cams[0]?.deviceId??'');currentlamId=cameraSelect.value;}
+async function startCamera(deviceId){if(activeStream){activeStream.getTracks().forEach(t=>t.stop());activeStream=null;}video.srcObject=null;const stream=await navigator.mediaDevices.getUserMedia({video:deviceId?{deviceId:{exact:deviceId},width:{ideal:1280},height:{ideal:720}}:{width:{ideal:1280},height:{ideal:720}},audio:false});activeStream=stream;video.srcObject=stream;video.play().catch(()=>{});currentlamId=stream.getVideoTracks()[0]?.getSettings()?.deviceId??null;}
+async function init(){try{const before=await navigator.mediaDevices.enumerateDevices();fillSelect(before.filter(d=>d.kind==='videoinput'),'');await startCamera(before.filter(d=>d.kind==='videoinput')[0]?.deviceId||null);const after=await navigator.mediaDevices.enumerateDevices();fillSelect(after.filter(d=>d.kind==='videoinput'),currentlamId);msg.style.display='none';controls.style.display='flex';startLoop();}catch(e){msg.textContent='Error accessing camera: '+e.message;}}
+pixelsSlider.addEventListener('input',()=>{pixels=+pixelsSlider.value;pixelsVal.textContent=pixels;});
+scanlinesSlider.addEventListener('input',()=>{scanlines=+scanlinesSlider.value;scanlinesVal.textContent=scanlines;});
+curvatureSlider.addEventListener('input',()=>{curvature=+curvatureSlider.value;curvatureVal.textContent=curvature;});
+vignetteSlider.addEventListener('input',()=>{vignette=+vignetteSlider.value;vignetteVal.textContent=vignette;});
+glitchSlider.addEventListener('input',()=>{glitch=+glitchSlider.value;glitchVal.textContent=glitch;});
+saturationSlider.addEventListener('input',()=>{saturation=+saturationSlider.value;saturationVal.textContent=saturation;});
+flipBtn.addEventListener('click',()=>{flipped=!flipped;flipBtn.classList.toggle('active',flipped);});
+pauseBtn.addEventListener('click',()=>{paused=!paused;pauseBtn.textContent=paused?'Resume':'Pause';pauseBtn.classList.toggle('paused',paused);paused?stopLoop():startLoop();});
+cameraSelect.addEventListener('change',async()=>{try{await startCamera(cameraSelect.value);}catch(e){console.error(e);}});
+qrBtn.addEventListener('click',()=>{const url=window.location.href;qrImg.src='https://api.qrserver.com/v1/create-qr-code/?size=220x220&data='+encodeURIComponent(url);qrUrl.textContent=url;qrModal.classList.add('open');});
+qrClose.addEventListener('click',()=>qrModal.classList.remove('open'));
+qrModal.addEventListener('click',e=>{if(e.target===qrModal)qrModal.classList.remove('open');});
+const IS_MOBILE=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+function flashEffect(){const el=document.createElement('div');el.style.cssText='position:fixed;inset:0;background:#fff;pointer-events:none;z-index:200;transition:opacity 0.5s';document.body.appendChild(el);el.getBoundingClientRect();el.style.opacity='0';setTimeout(()=>el.remove(),500);}
+async function saveFile(blob,filename,mimeType){if(IS_MOBILE&&navigator.canShare){const file=new File([blob],filename,{type:mimeType});if(navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:'CRT Filter'});return;}catch(e){if(e.name==='AbortError')return;}}}const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}
+photoBtn.addEventListener('click',()=>{
+  flashEffect();
+  const tmp=document.createElement('canvas');tmp.width=canvas.width;tmp.height=canvas.height;
+  const tltx=tmp.getContext('2d');tltx.drawImage(canvas,0,0);
+  tmp.toBlob(blob=>saveFile(blob,'crt-'+Date.now()+'.png','image/png'),'image/png');
+});
+init();
+</script>
+</body>
+</html>
